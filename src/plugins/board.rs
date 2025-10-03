@@ -3,7 +3,7 @@ use bevy::sprite::Anchor;
 use rand::Rng;
 
 use crate::AppState;
-use crate::plugins::{LeftClicked, MineCount, RightClicked};
+use crate::plugins::{Difficulty, GameAssets, LeftClicked, MineCount, RightClicked, Size};
 
 const OFFSETS: [(isize, isize); 8] =
     [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)];
@@ -13,12 +13,16 @@ pub struct Board {
     pub width: usize,
     pub height: usize,
     pub mines: usize,
-    pub tiles: Box<[Box<[Entity]>]>,
+    debug: bool,
+    tiles: Box<[Box<[Entity]>]>,
 }
 
 impl Board {
-    pub fn new(width: usize, height: usize, mines: usize) -> Self {
-        Self { width, height, mines, tiles: Box::new([]) }
+    pub fn new(size: Size, difficulty: Difficulty) -> Self {
+        let (width, height) = size.dimensions();
+        let mines = difficulty.mine_count(width * height);
+        let debug = difficulty.is_debug();
+        Self { width, height, mines, debug, tiles: Box::new([]) }
     }
 
     pub fn size(&self) -> Vec2 { Vec2::new(self.width as _, self.height as _) }
@@ -41,26 +45,44 @@ impl Board {
     }
 }
 
-fn initialize(mut board: ResMut<Board>, asset_server: Res<AssetServer>, mut commands: Commands) {
-    let mut chosen = 0;
+fn set_mine(temp: &mut [Vec<i8>], x: usize, y: usize) {
+    temp[x][y] = -1;
+    for (xd, yd) in OFFSETS {
+        if let Some(x) = x.checked_add_signed(xd)
+            && let Some(c) = temp.get_mut(x)
+            && let Some(y) = y.checked_add_signed(yd)
+            && let Some(n) = c.get_mut(y)
+            && *n != -1
+        {
+            *n += 1;
+        }
+    }
+}
+
+fn initialize(mut board: ResMut<Board>, assets: Res<GameAssets>, mut commands: Commands) {
     let mut temp = vec![vec![0; board.height]; board.width];
-    let mut rand = rand::rng();
-    while chosen < board.mines {
-        let x = rand.random_range(0..board.width);
-        let y = rand.random_range(0..board.height);
-        if temp[x][y] >= 0 {
-            temp[x][y] = -1;
-            for (xd, yd) in OFFSETS {
-                if let Some(x) = x.checked_add_signed(xd)
-                    && let Some(c) = temp.get_mut(x)
-                    && let Some(y) = y.checked_add_signed(yd)
-                    && let Some(n) = c.get_mut(y)
-                    && *n != -1
-                {
-                    *n += 1;
-                }
+    if board.debug {
+        [1usize, 4, 7]
+            .into_iter()
+            .flat_map(|x| [1usize, 4, 7].into_iter().map(move |y| (x, y)))
+            .enumerate()
+            .flat_map(|(n, (x, y))| {
+                OFFSETS
+                    .into_iter()
+                    .take(n)
+                    .map(move |(xd, yd)| (x.strict_add_signed(xd), y.strict_add_signed(yd)))
+            })
+            .for_each(|(x, y)| set_mine(&mut temp, x, y));
+    } else {
+        let mut chosen = 0;
+        let mut rand = rand::rng();
+        while chosen < board.mines {
+            let x = rand.random_range(0..board.width);
+            let y = rand.random_range(0..board.height);
+            if temp[x][y] >= 0 {
+                set_mine(&mut temp, x, y);
+                chosen += 1;
             }
-            chosen += 1;
         }
     }
     board.tiles = temp
@@ -69,7 +91,7 @@ fn initialize(mut board: ResMut<Board>, asset_server: Res<AssetServer>, mut comm
         .map(|(x, c)| {
             c.into_iter()
                 .enumerate()
-                .map(|(y, n)| Tile::spawn(x, y, n, &mut commands, &asset_server))
+                .map(|(y, n)| Tile::spawn(x, y, n, &mut commands, &assets))
                 .collect()
         })
         .collect();
@@ -81,13 +103,13 @@ struct Tile;
 
 impl Tile {
     fn spawn(
-        x: usize, y: usize, bombs: i8, commands: &mut Commands, asset_server: &AssetServer,
+        x: usize, y: usize, bombs: i8, commands: &mut Commands, assets: &GameAssets,
     ) -> Entity {
         commands
             .spawn((
                 Tile,
                 Sprite {
-                    image: asset_server.load("covered.png"),
+                    image: assets.covered.clone(),
                     custom_size: Some(Vec2::new(1.0, 1.0)),
                     anchor: Anchor::TopLeft,
                     image_mode: SpriteImageMode::Scale(ScalingMode::FitCenter),
@@ -128,11 +150,11 @@ enum TileValue {
 }
 
 impl TileValue {
-    fn get_image(self, asset_server: &AssetServer) -> Handle<Image> {
+    fn get_image(self, assets: &GameAssets) -> Handle<Image> {
         match self {
-            Self::Empty => asset_server.load("empty.png"),
-            Self::Neighbours(n) => asset_server.load(format!("{n}.png")),
-            Self::Bomb => asset_server.load("bomb_clicked.png"),
+            Self::Empty => assets.empty.clone(),
+            Self::Neighbours(n) => assets.neighbours[(n - 1) as usize].clone(),
+            Self::Bomb => assets.bomb_clicked.clone(),
         }
     }
 
@@ -151,9 +173,9 @@ struct Flood;
 
 fn uncover(
     sprite: &mut Sprite, state: &mut TileState, value: TileValue, coordinates: Coordinates,
-    commands: &mut Commands, asset_server: &AssetServer, board: &Board,
+    commands: &mut Commands, assets: &GameAssets, board: &Board,
 ) {
-    sprite.image = value.get_image(asset_server);
+    sprite.image = value.get_image(assets);
     *state = TileState::Uncovered;
     match value {
         TileValue::Empty => mark_neighbours(commands, board, coordinates),
@@ -174,15 +196,13 @@ fn left_click(
         (Entity, &mut Sprite, &mut TileState, &TileValue, &Coordinates),
         (With<Tile>, With<LeftClicked>),
     >,
-    tiles: Query<&TileState, Without<LeftClicked>>, board: Res<Board>,
-    asset_server: Res<AssetServer>,
+    tiles: Query<&TileState, Without<LeftClicked>>, board: Res<Board>, assets: Res<GameAssets>,
 ) {
     for (entity, mut sprite, mut state, &value, &coordinates) in clicked {
         match *state {
             TileState::Covered => {
                 uncover(
-                    &mut sprite, &mut state, value, coordinates, &mut commands, &asset_server,
-                    &board,
+                    &mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board,
                 );
             },
             TileState::Uncovered => match value {
@@ -210,13 +230,11 @@ fn flood(
         (Entity, &mut Sprite, &mut TileState, &TileValue, &Coordinates),
         (With<Tile>, With<Flood>),
     >,
-    board: Res<Board>, asset_server: Res<AssetServer>,
+    board: Res<Board>, assets: Res<GameAssets>,
 ) {
     for (entity, mut sprite, mut state, &value, &coordinates) in clicked {
         if *state == TileState::Covered {
-            uncover(
-                &mut sprite, &mut state, value, coordinates, &mut commands, &asset_server, &board,
-            );
+            uncover(&mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board);
         }
         commands.entity(entity).remove::<Flood>();
     }
@@ -225,17 +243,17 @@ fn flood(
 fn right_click(
     mut commands: Commands,
     clicked: Query<(Entity, &mut Sprite, &mut TileState), (With<Tile>, With<RightClicked>)>,
-    asset_server: Res<AssetServer>, mut count: ResMut<MineCount>,
+    assets: Res<GameAssets>, mut count: ResMut<MineCount>,
 ) {
     for (entity, mut sprite, mut state) in clicked {
         match *state {
             TileState::Covered => {
-                sprite.image = asset_server.load("flagged.png");
+                sprite.image = assets.flagged.clone();
                 *state = TileState::Flagged;
                 count.0 -= 1;
             },
             TileState::Flagged => {
-                sprite.image = asset_server.load("covered.png");
+                sprite.image = assets.covered.clone();
                 *state = TileState::Covered;
                 count.0 += 1;
             },
@@ -257,21 +275,21 @@ fn check_win(
 }
 
 fn add_flags(
-    tiles: Query<(&mut Sprite, &TileState, &TileValue), With<Tile>>, asset_server: Res<AssetServer>,
+    tiles: Query<(&mut Sprite, &TileState, &TileValue), With<Tile>>, assets: Res<GameAssets>,
 ) {
     for (mut sprite, &state, &value) in tiles {
         if state == TileState::Covered && value == TileValue::Bomb {
-            sprite.image = asset_server.load("flagged.png");
+            sprite.image = assets.flagged.clone();
         }
     }
 }
 
 fn uncover_bombs(
-    tiles: Query<(&mut Sprite, &TileState, &TileValue), With<Tile>>, asset_server: Res<AssetServer>,
+    tiles: Query<(&mut Sprite, &TileState, &TileValue), With<Tile>>, assets: Res<GameAssets>,
 ) {
     for (mut sprite, &state, &value) in tiles {
         if state == TileState::Covered && value == TileValue::Bomb {
-            sprite.image = asset_server.load("bomb.png");
+            sprite.image = assets.bomb.clone();
         }
     }
 }

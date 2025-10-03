@@ -19,8 +19,12 @@ struct HudRoot;
 #[derive(Resource)]
 pub struct MineCount(pub i32);
 
+#[derive(Resource)]
+struct Elapsed(f32);
+
 fn spawn(mut commands: Commands, board: Res<Board>) {
     commands.insert_resource(MineCount(board.mines as _));
+    commands.insert_resource(Elapsed(0.0));
     commands
         .spawn((
             Node {
@@ -38,12 +42,12 @@ fn spawn(mut commands: Commands, board: Res<Board>) {
                 .spawn((
                     Node {
                         width: Val::VMin(90.0),
-                        height: Val::VMin(18.0),
+                        height: Val::VMin(22.0),
                         padding: UiRect::new(
                             Val::VMin(10.0),
                             Val::VMin(10.0),
                             Val::VMin(1.0),
-                            Val::VMin(11.0),
+                            Val::VMin(14.0),
                         ),
                         justify_content: JustifyContent::SpaceBetween,
                         align_items: AlignItems::Center,
@@ -118,10 +122,10 @@ fn update_mines(count: Res<MineCount>, text: Single<&mut Text, With<MineText>>) 
 }
 
 fn update_time(
-    mut text: Single<&mut Text, With<TimeText>>, time: Res<Time>, mut elapsed: Local<f32>,
+    mut text: Single<&mut Text, With<TimeText>>, time: Res<Time>, mut elapsed: ResMut<Elapsed>,
 ) {
-    *elapsed += time.delta_secs();
-    let rounded = *elapsed as u32;
+    elapsed.0 += time.delta_secs();
+    let rounded = elapsed.0 as u32;
     let h = rounded / 3600;
     let m = (rounded % 3600) / 60;
     let s = rounded % 60;
@@ -140,6 +144,8 @@ fn show_message(mut message: Single<&mut Visibility, With<Message>>) {
 
 fn despawn(mut commands: Commands, root: Single<Entity, With<HudRoot>>) {
     commands.entity(*root).despawn();
+    commands.remove_resource::<MineCount>();
+    commands.remove_resource::<Elapsed>();
 }
 
 fn wait_for_enter(input: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<AppState>>) {

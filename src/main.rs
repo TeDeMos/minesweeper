@@ -5,7 +5,9 @@
 )]
 
 use bevy::prelude::*;
-use plugins::{board, camera, hide_children_on_hover, hud, main_menu, mouse, text_val_size};
+use plugins::{
+    board, camera, game_assets, hide_children_on_hover, hud, main_menu, mouse, text_val_size,
+};
 
 mod plugins;
 mod utils;
@@ -23,13 +25,14 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(ImagePlugin::default_nearest()),
-            text_val_size,
-            hide_children_on_hover,
-            main_menu,
             board,
             camera,
-            mouse,
+            game_assets,
+            hide_children_on_hover,
             hud,
+            main_menu,
+            mouse,
+            text_val_size,
         ))
         .init_state::<AppState>()
         .run();
