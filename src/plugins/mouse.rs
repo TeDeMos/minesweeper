@@ -36,11 +36,15 @@ impl MouseState {
     }
 }
 
-#[derive(Component)]
-pub struct LeftClicked;
+#[derive(EntityEvent)]
+pub struct LeftClicked {
+    entity: Entity,
+}
 
-#[derive(Component)]
-pub struct RightClicked;
+#[derive(EntityEvent)]
+pub struct RightClicked {
+    entity: Entity,
+}
 
 fn spawn(mut commands: Commands) { commands.insert_resource(MouseState::default()); }
 
@@ -52,8 +56,8 @@ fn click_event(
 ) {
     let Some(cursor) = window.cursor_position() else { return };
     let (mut transform, global, camera) = camera.into_inner();
-    let world = camera.viewport_to_world_2d(global, cursor).unwrap();
-    let entity = board.get_from_world(world);
+    let cursor_world = camera.viewport_to_world_2d(global, cursor).unwrap();
+    let entity = board.get_from_world(cursor_world);
     if button.just_pressed(MouseButton::Left) && !button.pressed(MouseButton::Right) {
         state.set(cursor, *transform, global, camera);
     } else if button.pressed(MouseButton::Left) && state.check_dragging(cursor) {
@@ -63,11 +67,11 @@ fn click_event(
         && !state.dragging
         && let Some(entity) = entity
     {
-        commands.entity(entity).insert(LeftClicked);
+        commands.trigger(LeftClicked { entity });
     } else if button.just_pressed(MouseButton::Right)
         && let Some(entity) = entity
     {
-        commands.entity(entity).insert(RightClicked);
+        commands.trigger(RightClicked { entity });
     }
 }
 

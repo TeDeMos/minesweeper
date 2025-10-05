@@ -151,7 +151,7 @@ fn button_base<M: Bundle>(marker: M) -> impl Bundle {
             ..default()
         },
         BackgroundColor(Nord::NIGHT[0]),
-        BorderColor(Nord::FROST[3]),
+        BorderColor::all(Nord::FROST[3]),
         BorderRadius::all(Val::Percent(5.0)),
         MenuButton,
         marker,
@@ -225,11 +225,11 @@ fn buttons_hover(
         match interaction {
             Interaction::Hovered => {
                 *background = BackgroundColor(Nord::NIGHT[1]);
-                *border = BorderColor(Nord::FROST[1]);
+                *border = BorderColor::all(Nord::FROST[1]);
             },
             Interaction::None => {
                 *background = BackgroundColor(Nord::NIGHT[0]);
-                *border = BorderColor(Nord::FROST[3]);
+                *border = BorderColor::all(Nord::FROST[3]);
             },
             Interaction::Pressed => {},
         }

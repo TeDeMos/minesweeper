@@ -12,6 +12,6 @@ pub use camera::{CameraLimits, MainCamera, camera};
 pub use game_assets::{GameAssets, game_assets};
 pub use hide_children_on_hover::{HideChildrenOnHover, hide_children_on_hover};
 pub use hud::{MineCount, hud};
-pub use main_menu::{main_menu, Difficulty, Size};
+pub use main_menu::{Difficulty, Size, main_menu};
 pub use mouse::{LeftClicked, RightClicked, mouse};
 pub use text_val_size::{TextValSize, text_val_size};

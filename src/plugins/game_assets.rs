@@ -23,6 +23,4 @@ fn spawn(mut commands: Commands, asset_server: Res<AssetServer>) {
     });
 }
 
-pub fn game_assets(app: &mut App) {
-    app.add_systems(Startup, spawn);
-}
+pub fn game_assets(app: &mut App) { app.add_systems(Startup, spawn); }

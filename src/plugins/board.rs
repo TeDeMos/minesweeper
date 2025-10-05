@@ -111,11 +111,11 @@ impl Tile {
                 Sprite {
                     image: assets.covered.clone(),
                     custom_size: Some(Vec2::new(1.0, 1.0)),
-                    anchor: Anchor::TopLeft,
                     image_mode: SpriteImageMode::Scale(ScalingMode::FitCenter),
                     ..default()
                 },
                 Transform::from_translation(Vec3::new(x as f32, -(y as f32), 0.0)),
+                Anchor::TOP_LEFT,
                 Coordinates::new(x, y),
                 TileValue::from_i8(bombs),
             ))
@@ -168,8 +168,10 @@ impl TileValue {
     }
 }
 
-#[derive(Component)]
-struct Flood;
+#[derive(EntityEvent)]
+struct Flood {
+    entity: Entity,
+}
 
 fn uncover(
     sprite: &mut Sprite, state: &mut TileState, value: TileValue, coordinates: Coordinates,
@@ -186,80 +188,74 @@ fn uncover(
 
 fn mark_neighbours(commands: &mut Commands, board: &Board, coordinates: Coordinates) {
     for entity in board.get_neighbours(coordinates) {
-        commands.entity(entity).insert(Flood);
+        commands.trigger(Flood { entity });
     }
 }
 
 fn left_click(
-    mut commands: Commands,
-    clicked: Query<
-        (Entity, &mut Sprite, &mut TileState, &TileValue, &Coordinates),
-        (With<Tile>, With<LeftClicked>),
-    >,
-    tiles: Query<&TileState, Without<LeftClicked>>, board: Res<Board>, assets: Res<GameAssets>,
+    left_clicked: On<LeftClicked>, mut commands: Commands,
+    mut tiles: Query<(&mut Sprite, &mut TileState, &TileValue, &Coordinates), With<Tile>>,
+    board: Res<Board>, assets: Res<GameAssets>,
 ) {
-    for (entity, mut sprite, mut state, &value, &coordinates) in clicked {
-        match *state {
-            TileState::Covered => {
-                uncover(
-                    &mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board,
-                );
+    let Ok((mut sprite, mut state, &value, &coordinates)) =
+        tiles.get_mut(left_clicked.event_target())
+    else {
+        return;
+    };
+    match *state {
+        TileState::Covered => {
+            uncover(&mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board);
+        },
+        TileState::Uncovered => match value {
+            TileValue::Neighbours(n) => {
+                if board
+                    .get_neighbours(coordinates)
+                    .filter(|&e| *tiles.get(e).unwrap().1 == TileState::Flagged)
+                    .count()
+                    == n as usize
+                {
+                    mark_neighbours(&mut commands, &board, coordinates);
+                }
             },
-            TileState::Uncovered => match value {
-                TileValue::Neighbours(n) => {
-                    if board
-                        .get_neighbours(coordinates)
-                        .filter(|&e| *tiles.get(e).unwrap() == TileState::Flagged)
-                        .count()
-                        == n as usize
-                    {
-                        mark_neighbours(&mut commands, &board, coordinates);
-                    }
-                },
-                TileValue::Empty | TileValue::Bomb => {},
-            },
-            TileState::Flagged => {},
-        }
-        commands.entity(entity).remove::<LeftClicked>();
+            TileValue::Empty | TileValue::Bomb => {},
+        },
+        TileState::Flagged => {},
     }
 }
 
 fn flood(
-    mut commands: Commands,
-    clicked: Query<
-        (Entity, &mut Sprite, &mut TileState, &TileValue, &Coordinates),
-        (With<Tile>, With<Flood>),
-    >,
+    flood: On<Flood>, mut commands: Commands,
+    mut tiles: Query<(&mut Sprite, &mut TileState, &TileValue, &Coordinates), With<Tile>>,
     board: Res<Board>, assets: Res<GameAssets>,
 ) {
-    for (entity, mut sprite, mut state, &value, &coordinates) in clicked {
-        if *state == TileState::Covered {
-            uncover(&mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board);
-        }
-        commands.entity(entity).remove::<Flood>();
+    let Ok((mut sprite, mut state, &value, &coordinates)) = tiles.get_mut(flood.event_target())
+    else {
+        return;
+    };
+    if *state == TileState::Covered {
+        uncover(&mut sprite, &mut state, value, coordinates, &mut commands, &assets, &board);
     }
 }
 
 fn right_click(
-    mut commands: Commands,
-    clicked: Query<(Entity, &mut Sprite, &mut TileState), (With<Tile>, With<RightClicked>)>,
+    right_clicked: On<RightClicked>, mut tiles: Query<(&mut Sprite, &mut TileState), With<Tile>>,
     assets: Res<GameAssets>, mut count: ResMut<MineCount>,
 ) {
-    for (entity, mut sprite, mut state) in clicked {
-        match *state {
-            TileState::Covered => {
-                sprite.image = assets.flagged.clone();
-                *state = TileState::Flagged;
-                count.0 -= 1;
-            },
-            TileState::Flagged => {
-                sprite.image = assets.covered.clone();
-                *state = TileState::Covered;
-                count.0 += 1;
-            },
-            TileState::Uncovered => {},
-        }
-        commands.entity(entity).remove::<RightClicked>();
+    let Ok((mut sprite, mut state)) = tiles.get_mut(right_clicked.event_target()) else {
+        return;
+    };
+    match *state {
+        TileState::Covered => {
+            sprite.image = assets.flagged.clone();
+            *state = TileState::Flagged;
+            count.0 -= 1;
+        },
+        TileState::Flagged => {
+            sprite.image = assets.covered.clone();
+            *state = TileState::Covered;
+            count.0 += 1;
+        },
+        TileState::Uncovered => {},
     }
 }
 
@@ -303,10 +299,10 @@ fn despawn(mut commands: Commands, board: Res<Board>) {
 
 pub fn board(app: &mut App) {
     app.add_systems(OnEnter(AppState::Playing), initialize)
-        .add_systems(
-            Update,
-            (left_click, flood, right_click, check_win).run_if(in_state(AppState::Playing)),
-        )
+        .add_systems(Update, (check_win).run_if(in_state(AppState::Playing)))
+        .add_observer(left_click)
+        .add_observer(right_click)
+        .add_observer(flood)
         .add_systems(OnEnter(AppState::Won), add_flags)
         .add_systems(OnEnter(AppState::Lost), uncover_bombs)
         .add_systems(OnEnter(AppState::Menu), despawn.run_if(resource_exists::<Board>));
