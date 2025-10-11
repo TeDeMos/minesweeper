@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
+use itertools::iproduct;
 use rand::Rng;
 
 use crate::AppState;
@@ -14,6 +15,8 @@ pub struct Board {
     pub height: usize,
     pub mines: usize,
     debug: bool,
+    pub difficulty: Difficulty,
+    pub size: Size,
     tiles: Box<[Box<[Entity]>]>,
 }
 
@@ -22,7 +25,7 @@ impl Board {
         let (width, height) = size.dimensions();
         let mines = difficulty.mine_count(width * height);
         let debug = difficulty.is_debug();
-        Self { width, height, mines, debug, tiles: Box::new([]) }
+        Self { width, height, mines, debug, difficulty, size, tiles: Box::new([]) }
     }
 
     pub fn size(&self) -> Vec2 { Vec2::new(self.width as _, self.height as _) }
@@ -60,11 +63,12 @@ fn set_mine(temp: &mut [Vec<i8>], x: usize, y: usize) {
 }
 
 fn initialize(mut board: ResMut<Board>, assets: Res<GameAssets>, mut commands: Commands) {
+    if !board.tiles.is_empty() {
+        board.tiles.iter().flatten().for_each(|&e| commands.entity(e).despawn());
+    }
     let mut temp = vec![vec![0; board.height]; board.width];
     if board.debug {
-        [1usize, 4, 7]
-            .into_iter()
-            .flat_map(|x| [1usize, 4, 7].into_iter().map(move |y| (x, y)))
+        iproduct!([1usize, 4, 7], [1usize, 4, 7])
             .enumerate()
             .flat_map(|(n, (x, y))| {
                 OFFSETS
@@ -118,6 +122,7 @@ impl Tile {
                 Anchor::TOP_LEFT,
                 Coordinates::new(x, y),
                 TileValue::from_i8(bombs),
+                DespawnOnEnter(AppState::Menu)
             ))
             .id()
     }
@@ -290,16 +295,13 @@ fn uncover_bombs(
     }
 }
 
-fn despawn(mut commands: Commands, board: Res<Board>) {
-    for &e in board.tiles.iter().flatten() {
-        commands.entity(e).despawn();
-    }
+fn despawn(mut commands: Commands) {
     commands.remove_resource::<Board>();
 }
 
 pub fn board(app: &mut App) {
     app.add_systems(OnEnter(AppState::Playing), initialize)
-        .add_systems(Update, (check_win).run_if(in_state(AppState::Playing)))
+        .add_systems(Update, check_win.run_if(in_state(AppState::Playing)))
         .add_observer(left_click)
         .add_observer(right_click)
         .add_observer(flood)

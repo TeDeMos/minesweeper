@@ -5,6 +5,7 @@
 )]
 
 use bevy::prelude::*;
+use bevy::window::PresentMode;
 use plugins::{
     board, camera, game_assets, hide_children_on_hover, hud, main_menu, mouse, text_val_size,
 };
@@ -25,6 +26,13 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(ImagePlugin::default_nearest()),
+            // DefaultPlugins.set(ImagePlugin::default_nearest()).set(WindowPlugin {
+            //     primary_window: Some(Window {
+            //         present_mode: PresentMode::AutoNoVsync,
+            //         ..default()
+            //     }),
+            //     ..default()
+            // }),
             board,
             camera,
             game_assets,

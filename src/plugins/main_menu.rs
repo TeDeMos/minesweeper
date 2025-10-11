@@ -12,10 +12,24 @@ use crate::utils::Nord;
 #[derive(Component, Clone)]
 struct MenuButton;
 
-trait Cycling: Display + Copy + Component<Mutability = Mutable> {
+pub trait Cycling: Display + Copy + Component<Mutability = Mutable> {
     fn next(self) -> Self;
     fn color(self) -> Color;
     fn label(self) -> String;
+
+    fn spawn(
+        self, text_size: Val, include_target: bool, parent: &mut RelatedSpawnerCommands<ChildOf>,
+    ) {
+        parent.spawn((Text::default(), TextValSize(text_size))).with_children(|parent| {
+            parent.spawn((TextSpan(self.label()), TextColor(Nord::SNOW[2])));
+            let base = (TextSpan(self.to_string()), TextColor(self.color()));
+            if include_target {
+                parent.spawn((base, TargetText));
+            } else {
+                parent.spawn(base);
+            }
+        });
+    }
 }
 
 #[derive(Component)]
@@ -59,7 +73,7 @@ impl Cycling for Size {
         }
     }
 
-    fn label(self) -> String { String::from("Size:") }
+    fn label(self) -> String { String::from("Size: ") }
 }
 
 impl Display for Size {
@@ -117,7 +131,7 @@ impl Cycling for Difficulty {
         }
     }
 
-    fn label(self) -> String { String::from("Difficulty:") }
+    fn label(self) -> String { String::from("Difficulty: ") }
 }
 
 impl Display for Difficulty {
@@ -159,19 +173,9 @@ fn button_base<M: Bundle>(marker: M) -> impl Bundle {
 }
 
 fn cycling_button<C: Cycling>(parent: &mut RelatedSpawnerCommands<ChildOf>, cycling: C) {
-    parent.spawn(button_base(cycling)).with_children(|parent| {
-        parent.spawn((
-            Text::new(cycling.label()),
-            TextColor(Nord::SNOW[2]),
-            TextValSize(Val::Percent(45.0)),
-        ));
-        parent.spawn((
-            Text::new(cycling.to_string()),
-            TextColor(cycling.color()),
-            TextValSize(Val::Percent(45.0)),
-            TargetText,
-        ));
-    });
+    parent
+        .spawn(button_base(cycling))
+        .with_children(|parent| cycling.spawn(Val::Percent(45.0), true, parent));
 }
 
 fn spawn(mut commands: Commands) {
@@ -241,14 +245,15 @@ fn cycling_click<C: Cycling>(
         (&Interaction, &mut C, &Children),
         (Changed<Interaction>, With<MenuButton>),
     >,
-    mut text: Query<(&mut Text, &mut TextColor), With<TargetText>>,
+    text: Query<&Children, With<Text>>,
+    mut span: Query<(&mut TextSpan, &mut TextColor), With<TargetText>>,
 ) {
     let (Interaction::Pressed, mut cycling, children) = interaction.into_inner() else {
         return;
     };
     *cycling = cycling.next();
-    for &e in children {
-        let Ok((mut text, mut color)) = text.get_mut(e) else { continue };
+    for &e in children.into_iter().flat_map(|&e| text.get(e)).flatten() {
+        let Ok((mut text, mut color)) = span.get_mut(e) else { continue };
         text.0 = cycling.to_string();
         color.0 = cycling.color();
     }

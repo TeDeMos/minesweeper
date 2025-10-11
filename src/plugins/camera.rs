@@ -75,7 +75,7 @@ fn spawn(
 }
 
 fn window_resized(
-    mut resize_events: EventReader<WindowResized>,
+    mut resize_events: MessageReader<WindowResized>,
     camera: Single<&mut Projection, With<MainCamera>>, mut limit: ResMut<CameraLimits>,
     board: Res<Board>,
 ) {

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::AppState;
+use crate::plugins::main_menu::Cycling;
 use crate::plugins::{Board, HideChildrenOnHover, TextValSize};
 use crate::utils::Nord;
 
@@ -41,52 +42,57 @@ fn spawn(mut commands: Commands, board: Res<Board>) {
             parent
                 .spawn((
                     Node {
-                        width: Val::VMin(90.0),
-                        height: Val::VMin(22.0),
+                        width: Val::VMin(100.0),
+                        height: Val::VMin(25.0),
                         padding: UiRect::new(
                             Val::VMin(10.0),
                             Val::VMin(10.0),
                             Val::VMin(1.0),
-                            Val::VMin(14.0),
+                            Val::VMin(19.0),
                         ),
-                        justify_content: JustifyContent::SpaceBetween,
+                        justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
                         ..default()
                     },
                     HideChildrenOnHover,
                 ))
                 .with_children(|parent| {
-                    let background = (
-                        Node {
-                            width: Val::Percent(40.0),
-                            height: Val::Percent(100.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            ..default()
-                        },
-                        BackgroundColor(Nord::NIGHT[0]),
-                        BorderRadius::all(Val::Percent(10.0)),
-                    );
-                    parent.spawn(background.clone()).with_child((
-                        Text::new(""),
-                        TextValSize(Val::Percent(50.0)),
-                        MineText,
-                    ));
-                    parent.spawn(background).with_child((
-                        Text::new(""),
-                        TextValSize(Val::Percent(50.0)),
-                        TimeText,
-                    ));
+                    parent
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(100.0),
+                                justify_content: JustifyContent::SpaceAround,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Nord::NIGHT[0]),
+                            BorderRadius::all(Val::Percent(10.0)),
+                        ))
+                        .with_children(|parent| {
+                            parent.spawn((
+                                Text::new(""),
+                                TextValSize(Val::Percent(45.0)),
+                                MineText,
+                            ));
+                            parent.spawn((
+                                Text::new(""),
+                                TextValSize(Val::Percent(45.0)),
+                                TimeText,
+                            ));
+                            board.size.spawn(Val::Percent(45.0), false, parent);
+                            board.difficulty.spawn(Val::Percent(45.0), false, parent);
+                        });
                 });
             parent
                 .spawn((
                     Node {
                         width: Val::VMin(90.0),
-                        height: Val::VMin(18.0),
+                        height: Val::VMin(20.0),
                         padding: UiRect::new(
                             Val::VMin(10.0),
                             Val::VMin(10.0),
-                            Val::VMin(11.0),
+                            Val::VMin(13.0),
                             Val::VMin(1.0),
                         ),
                         align_items: AlignItems::Center,
@@ -110,11 +116,20 @@ fn spawn(mut commands: Commands, board: Res<Board>) {
                             BorderRadius::all(Val::Percent(10.0)),
                         ))
                         .with_child((
-                            Text::new("Press Enter to return back to menu"),
-                            TextValSize(Val::Percent(50.0)),
+                            Text::new("M: Menu, R: Restart"),
+                            TextValSize(Val::Percent(45.0)),
                         ));
                 });
         });
+}
+
+fn reset(
+    board: Res<Board>, mut count: ResMut<MineCount>, mut elapsed: ResMut<Elapsed>,
+    mut message: Single<&mut Visibility, With<Message>>,
+) {
+    count.0 = board.mines as _;
+    elapsed.0 = 0.0;
+    **message = Visibility::Hidden;
 }
 
 fn update_mines(count: Res<MineCount>, text: Single<&mut Text, With<MineText>>) {
@@ -148,14 +163,17 @@ fn despawn(mut commands: Commands, root: Single<Entity, With<HudRoot>>) {
     commands.remove_resource::<Elapsed>();
 }
 
-fn wait_for_enter(input: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<AppState>>) {
-    if input.just_pressed(KeyCode::Enter) {
+fn wait_for_key(input: Res<ButtonInput<KeyCode>>, mut next_state: ResMut<NextState<AppState>>) {
+    if input.just_pressed(KeyCode::KeyM) {
         next_state.set(AppState::Menu);
+    } else if input.just_pressed(KeyCode::KeyR) {
+        next_state.set(AppState::Playing);
     }
 }
 
 pub fn hud(app: &mut App) {
-    app.add_systems(OnEnter(AppState::Playing), spawn)
+    app.add_systems(OnExit(AppState::Menu), spawn)
+        .add_systems(OnEnter(AppState::Playing), reset)
         .add_systems(
             Update,
             (update_mines.run_if(resource_exists_and_changed::<MineCount>), update_time)
@@ -165,7 +183,7 @@ pub fn hud(app: &mut App) {
         .add_systems(OnEnter(AppState::Won), force_zero)
         .add_systems(
             Update,
-            wait_for_enter.run_if(in_state(AppState::Won).or(in_state(AppState::Lost))),
+            wait_for_key.run_if(in_state(AppState::Won).or(in_state(AppState::Lost))),
         )
         .add_systems(OnEnter(AppState::Menu), despawn);
 }
